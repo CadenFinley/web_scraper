@@ -16,8 +16,8 @@ timestamp = datetime.now().strftime("%m-%d-%Y")
 csv_filename = f'hymnal_data_{timestamp}.csv'
 global_hymn_id = 1
 request_counter = 0
-hymnals_to_search = ['SoP1870', 'GSC1986', 'SFP1994']
-#hymnals_to_search = []
+#hymnals_to_search = ['SoP1870', 'GSC1986', 'SFP1994']
+hymnals_to_search = []
 
 # eg url:
 # https://hymnary.org/hymnal/<ID>?page=<N>
