@@ -1,4 +1,4 @@
-Design for Dr. Monty Lynn for private use
+Designed for Dr. Monty Lynn for private use
 
 
 ```bash
