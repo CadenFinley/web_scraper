@@ -16,6 +16,8 @@ timestamp = datetime.now().strftime("%m-%d-%Y")
 csv_filename = f'hymnal_data_{timestamp}.csv'
 global_hymn_id = 1
 request_counter = 0
+#hymnals_to_search = ['SoP1870', 'GSC1986', 'SFP1994']
+hymnals_to_search = []
 
 def get_response(url):
     global request_counter
@@ -171,7 +173,8 @@ def extract_all_hymn_data(initial_soup, pager_items, hymnal_code, hymnal_name, d
 
 
 def main():
-    if len(sys.argv) < 2:
+    global hymnals_to_search
+    if len(sys.argv) < 2 and hymnals_to_search == []:
         sys.exit(1)
     
     hymnals_to_search = sys.argv[1:]
