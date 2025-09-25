@@ -6,10 +6,6 @@ import re
 from datetime import datetime
 import sys
 import time
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 
 #caden finley
 
@@ -21,24 +17,11 @@ csv_filename = f'hymnal_data_{timestamp}.csv'
 global_hymn_id = 1
 request_counter = 0
 
-# Create a session with connection pooling and retry strategy
-session = requests.Session()
-retry_strategy = Retry(
-    total=3,
-    backoff_factor=1,
-    status_forcelist=[429, 500, 502, 503, 504],
-)
-adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=20)
-session.mount("http://", adapter)
-session.mount("https://", adapter)
-
 def get_response(url):
     global request_counter
     request_counter += 1
     print(f"Making request #{request_counter} to: {url}")
-    # Add a small delay to be respectful to the server
-    time.sleep(0.1)
-    return session.get(url, timeout=10)
+    return requests.get(url, timeout=10)
 
 def extract_pager_items(soup, base_hymnal_url):
     pager_items = []
@@ -55,7 +38,6 @@ def extract_pager_items(soup, base_hymnal_url):
                 page_match = re.search(r'page=(\d+)', href)
                 if page_match:
                     max_page = int(page_match.group(1))
-                    # print(f"  Found pager-last indicating {max_page + 1} total pages (0-{max_page})")
                     break
                 
     for page_num in range(1, max_page + 1):
