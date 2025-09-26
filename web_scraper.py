@@ -139,6 +139,7 @@ def extract_hymns_from_page(soup, page_label, hymnal_code, hymnal_name, denomina
                 'Hymnal_Code': hymnal_code,
                 'Hymnal_Name': hymnal_name,
                 'Denomination': denomination,
+                'Hymn_Total': '',
                 'Hymn_Number': hymn_number,
                 'Hymn': hymn_text,
                 'Hymn_No_Blanks': format_hymn_no_blanks(hymn_text),
@@ -170,6 +171,13 @@ def extract_all_hymn_data(initial_soup, pager_items, hymnal_code, hymnal_name, d
         page_soup = BeautifulSoup(page_response.text, 'html.parser')
         page_hymns = extract_hymns_from_page(page_soup, item['label'], hymnal_code, hymnal_name, denomination)
         all_hymns.extend(page_hymns)
+    
+    hymn_total = len(all_hymns)
+    for hymn in all_hymns:
+        hymn['Hymn_Total'] = hymn_total
+
+    print(f"Total hymns collected for {hymnal_code}: {hymn_total}", end='\n')
+    print()
     
     return all_hymns
 
@@ -205,9 +213,6 @@ def main():
         hymns = extract_all_hymn_data(soup, pager_items, hymnal_code, hymnal_name, denomination)
         
         all_hymns.extend(hymns)
-        
-        print(f"Total hymns collected for {hymnal_code}: {len([h for h in all_hymns if h['Hymnal_Code'] == hymnal_code])}")
-        print()
     
     print(f"Total hymns collected: {len(all_hymns)}")
     print(f"Total HTTP requests made: {request_counter}")
