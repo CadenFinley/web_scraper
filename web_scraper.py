@@ -5,7 +5,6 @@ from urllib.parse import urljoin
 import re
 from datetime import datetime
 import sys
-import time
 
 #caden finley
 
