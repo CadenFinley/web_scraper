@@ -7,6 +7,8 @@ from datetime import datetime
 import sys
 from collections import defaultdict
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # caden finley
 
@@ -18,11 +20,15 @@ csv_filename = f'hymnal_data_{timestamp}.csv'
 global_hymn_id = 1
 request_counter = 0
 hymnals_to_search = []
+hymn_id_lock = threading.Lock()
+request_counter_lock = threading.Lock()
 
 def get_response(url):
     global request_counter
-    request_counter += 1
-    print(f"Making request #{request_counter}")
+    with request_counter_lock:
+        request_counter += 1
+        current_count = request_counter
+    print(f"Making request #{current_count}")
     time.sleep(0.5)
     return requests.get(url, timeout=10)
 
@@ -134,6 +140,10 @@ def extract_hymns_from_page(soup, page_label, hymnal_code, hymnal_name, denomina
         hymn_text = hymn_text_link.get_text(strip=True) if hymn_text_link else ''
 
         if hymn_number and hymn_text:
+            with hymn_id_lock:
+                hymn_id = global_hymn_id
+                global_hymn_id += 1
+            
             page_hymns.append({
                 'Hymnal_Code': hymnal_code,
                 'Hymnal_Name': hymnal_name,
@@ -142,9 +152,8 @@ def extract_hymns_from_page(soup, page_label, hymnal_code, hymnal_name, denomina
                 'Hymn_Number': hymn_number,
                 'Hymn': hymn_text,
                 'Hymn_No_Blanks': format_hymn_no_blanks(hymn_text),
-                'Hymn_ID': global_hymn_id
+                'Hymn_ID': hymn_id
             })
-            global_hymn_id += 1
     
     print(f"  Found {len(page_hymns)} hymns on page {page_label}")
     return page_hymns
@@ -246,6 +255,26 @@ def generate_book_data_csv(all_hymns_data, output_csv):
         writer.writerow(total_row)
         print(f"Data written to {output_csv}")
 
+def process_single_hymnal(hymnal_code):
+    """Process a single hymnal and return its hymn data."""
+    target_url = urljoin(base_url, f"{sub_url_hymnal}/{hymnal_code}")
+    response = get_response(target_url)
+
+    if response.status_code != 200:
+        print(f"Failed to fetch {target_url} (status {response.status_code})")
+        return []
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    hymnal_name, denomination = extract_hymnal_metadata(soup)
+    print(f"Processing {hymnal_code}: {hymnal_name}")
+    
+    pager_items = extract_pager_items(soup, target_url)
+    
+    hymns = extract_all_hymn_data(soup, pager_items, hymnal_code, hymnal_name, denomination)
+    
+    return hymns
+
 def main():
     global hymnals_to_search
     if len(sys.argv) < 2 and hymnals_to_search == []:
@@ -258,25 +287,18 @@ def main():
     print()
     
     all_hymns = []
+    max_workers = min(5, len(hymnals_to_search))
     
-    for hymnal_code in hymnals_to_search:
-        target_url = urljoin(base_url, f"{sub_url_hymnal}/{hymnal_code}")
-        response = get_response(target_url)
-
-        if response.status_code != 200:
-            print(f"Failed to fetch {target_url} (status {response.status_code})")
-            continue
-
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        hymnal_name, denomination = extract_hymnal_metadata(soup)
-        print(f"Processing {hymnal_code}: {hymnal_name}")
-        
-        pager_items = extract_pager_items(soup, target_url)
-        
-        hymns = extract_all_hymn_data(soup, pager_items, hymnal_code, hymnal_name, denomination)
-        
-        all_hymns.extend(hymns)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_hymnal = {executor.submit(process_single_hymnal, code): code 
+                           for code in hymnals_to_search}
+        for future in as_completed(future_to_hymnal):
+            hymnal_code = future_to_hymnal[future]
+            try:
+                hymns = future.result()
+                all_hymns.extend(hymns)
+            except Exception as exc:
+                print(f"{hymnal_code} generated an exception: {exc}")
     
     print(f"Total hymns collected: {len(all_hymns)}")
     print(f"Total HTTP requests made: {request_counter}")
