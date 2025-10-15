@@ -9,6 +9,7 @@ from collections import defaultdict
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+import argparse
 
 # caden finley
 
@@ -20,6 +21,8 @@ csv_filename = f'hymnal_data_{timestamp}.csv'
 global_hymn_id = 1
 request_counter = 0
 hymnals_to_search = []
+request_delay = 0.5
+max_workers = 5
 hymn_id_lock = threading.Lock()
 request_counter_lock = threading.Lock()
 
@@ -29,7 +32,7 @@ def get_response(url):
         request_counter += 1
         current_count = request_counter
     print(f"Making request #{current_count}")
-    time.sleep(0.5)
+    time.sleep(request_delay)
     return requests.get(url, timeout=10)
 
 def extract_pager_items(soup, base_hymnal_url):
@@ -276,14 +279,19 @@ def process_single_hymnal(hymnal_code):
     return hymns
 
 def main():
-    global hymnals_to_search
-    if len(sys.argv) < 2 and hymnals_to_search == []:
+    global hymnals_to_search, request_delay, max_workers
+    
+    if len(sys.argv) < 4 or not sys.argv[1].isdigit() or not re.match(r'^\d+(\.\d+)?$', sys.argv[2]):
+        print("Usage: python3 web_scraper.py <workers> <delay> <hymnal1> <hymnal2> ...")
+        print("Example: python3 web_scraper.py 5 0.5 SoP1870 GSC1986 SFP1994")
         sys.exit(1)
     
-    if len(hymnals_to_search) == 0:
-        hymnals_to_search = sys.argv[1:]
+    max_workers = int(sys.argv[1])
+    request_delay = float(sys.argv[2])
+    hymnals_to_search = sys.argv[3:]
 
     print(f"Searching hymnals: {', '.join(hymnals_to_search)}")
+    print(f"Request delay: {request_delay}s, Workers: {max_workers}")
     print()
     
     all_hymns = []

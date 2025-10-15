@@ -10,9 +10,9 @@ Designed for Dr. Monty Lynn for private use at ACU
 ```
 
 ```bash
-  python3 web_scraper.py SoP1870 GSC1986
+  python3 web_scraper.py 1 0.5 SoP1870 GSC1986
 ```
 
 ```bash
-  python3 web_scraper.py <tag> <tag>
+  python3 web_scraper.py <workers> <delay> <tag> <tag>
 ```
