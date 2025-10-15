@@ -5,8 +5,10 @@ from urllib.parse import urljoin
 import re
 from datetime import datetime
 import sys
+from collections import defaultdict
+import time
 
-#caden finley
+# caden finley
 
 csv_fields = ['Hymnal_Code', 'Hymnal_Name', 'Denomination', 'Hymn_Total', 'Hymn_Number', 'Hymn', 'Hymn_No_Blanks', 'Hymn_ID']
 base_url = 'https://hymnary.org/'
@@ -15,16 +17,13 @@ timestamp = datetime.now().strftime("%m-%d-%Y")
 csv_filename = f'hymnal_data_{timestamp}.csv'
 global_hymn_id = 1
 request_counter = 0
-#hymnals_to_search = ['SoP1870', 'GSC1986', 'SFP1994']
 hymnals_to_search = []
-
-# eg url:
-# https://hymnary.org/hymnal/<ID>?page=<N>
 
 def get_response(url):
     global request_counter
     request_counter += 1
-    print(f"Making request #{request_counter} to: {url}")
+    print(f"Making request #{request_counter}")
+    time.sleep(0.5)
     return requests.get(url, timeout=10)
 
 def extract_pager_items(soup, base_hymnal_url):
@@ -177,10 +176,75 @@ def extract_all_hymn_data(initial_soup, pager_items, hymnal_code, hymnal_name, d
         hymn['Hymn_Total'] = hymn_total
 
     print(f"Total hymns collected for {hymnal_code}: {hymn_total}", end='\n')
-    print()
     
     return all_hymns
 
+def generate_hymnals_csv(all_hymns_data, output_csv):
+    hymnals = {}
+    
+    for row in all_hymns_data:
+        code = row['Hymnal_Code']
+        if code not in hymnals:
+            hymnals[code] = {
+                'Hymnal_Code': code,
+                'Hymnal_Name': row['Hymnal_Name'],
+                'Denomination': row['Denomination'],
+                'Hymn_Total': row['Hymn_Total']
+            }
+    
+    with open(output_csv, 'w', newline='', encoding='utf-8') as f:
+        fieldnames = ['Hymnal_Code', 'Hymnal_Name', 'Denomination', 'Hymn_Total']
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        
+        for code in sorted(hymnals.keys()):
+            writer.writerow(hymnals[code])
+    print(f"Data written to {output_csv}")
+
+def generate_book_data_csv(all_hymns_data, output_csv):
+    hymnal_codes = set()
+    hymn_data = defaultdict(lambda: defaultdict(int))
+    
+    for row in all_hymns_data:
+        code = row['Hymnal_Code']
+        hymn = row['Hymn']
+        
+        hymnal_codes.add(code)
+        hymn_data[hymn][code] += 1
+      
+    sorted_codes = sorted(hymnal_codes)
+     
+    with open(output_csv, 'w', newline='', encoding='utf-8') as f:
+        fieldnames = ['Hymn', 'Hymn_No_Blanks'] + sorted_codes + ['Total']
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        
+        
+        for hymn in sorted(hymn_data.keys()):
+            row_data = {'Hymn': hymn, 'Hymn_No_Blanks': format_hymn_no_blanks(hymn)}
+            row_total = 0
+            
+            for code in sorted_codes:
+                count = hymn_data[hymn][code]
+                row_data[code] = count
+                row_total += count
+            
+            row_data['Total'] = row_total
+            writer.writerow(row_data)
+        
+        
+        total_row = {'Hymn': 'TOTAL', 'Hymn_No_Blanks': 'TOTAL'}
+        grand_total = 0
+        
+        for code in sorted_codes:
+            code_total = sum(hymn_data[hymn][code] for hymn in hymn_data)
+            total_row[code] = code_total  # type: ignore
+            grand_total += code_total
+        
+        total_row['Total'] = grand_total  # type: ignore
+        writer.writerow(total_row)
+        print(f"Data written to {output_csv}")
 
 def main():
     global hymnals_to_search
@@ -223,6 +287,11 @@ def main():
             writer.writeheader()
             writer.writerows(all_hymns)
         print(f"Data written to {csv_filename}")
+        
+        hymnals_csv = f'hymnals_{timestamp}.csv'
+        book_data_csv = f'book_data_{timestamp}.csv'
+        generate_hymnals_csv(all_hymns, hymnals_csv)
+        generate_book_data_csv(all_hymns, book_data_csv)
 
 if __name__ == "__main__":
     main()

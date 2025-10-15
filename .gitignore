@@ -1,5 +1,7 @@
 # Data files
 hymnal_data_*.csv
+book_data_*.csv
+hymnals_*.csv
 
 # General Python gitignore patterns
 __pycache__/
