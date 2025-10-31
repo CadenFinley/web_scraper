@@ -28,6 +28,12 @@ request_counter_lock = threading.Lock()
 similarity_threshold = 0.75
 max_similarity_results = 100
 
+def log_progress(stage, current, total):
+    if total <= 0:
+        return
+    percent = (current / total) * 100
+    print(f"{stage}: {current}/{total} ({percent:.1f}%)", flush=True)
+
 def get_response(url):
     global request_counter
     with request_counter_lock:
@@ -256,7 +262,6 @@ def generate_book_data_csv(all_hymns_data, output_csv):
 
 
 def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max_results_per_hymn=15):
-    """Generate a CSV showing fuzzy matches between hymns across hymnals."""
     if not all_hymns_data:
         return
 
@@ -292,10 +297,14 @@ def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max
     unique_keys = list(unique_map.keys())
     similarity_results = {key: [(key, 1.0)] for key in unique_keys}
 
-    for i in range(len(unique_keys)):
-        key_i = unique_keys[i]
+    total_unique = len(unique_keys)
+    if total_unique:
+        print(f"Preparing similarity comparisons for {total_unique} unique hymns...", flush=True)
+    progress_interval = max(1, total_unique // 20) if total_unique else 1
+
+    for index, key_i in enumerate(unique_keys):
         text_i = unique_map[key_i]['compare_text']
-        for j in range(i + 1, len(unique_keys)):
+        for j in range(index + 1, len(unique_keys)):
             key_j = unique_keys[j]
             text_j = unique_map[key_j]['compare_text']
             score = SequenceMatcher(None, text_i, text_j).ratio()
@@ -303,8 +312,15 @@ def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max
                 similarity_results[key_i].append((key_j, score))
                 similarity_results[key_j].append((key_i, score))
 
+        processed = index + 1
+        if total_unique and (processed % progress_interval == 0 or processed == total_unique):
+            log_progress("Similarity comparisons", processed, total_unique)
+
     similarity_rows = []
-    for entry in normalized_entries:
+    total_entries = len(normalized_entries)
+    entry_interval = max(1, total_entries // 20) if total_entries else 1
+
+    for entry_index, entry in enumerate(normalized_entries, start=1):
         key = entry['Normalized_Hymn']
         matches = similarity_results.get(key, [])
         matches = sorted(matches, key=lambda item: item[1], reverse=True)
@@ -341,6 +357,9 @@ def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max
                 'Similar_Hymn_Count': len(similar_entries)
             })
 
+        if total_entries and (entry_index % entry_interval == 0 or entry_index == total_entries):
+            log_progress("Aggregating similarity rows", entry_index, total_entries)
+
     similarity_rows = sorted(
         similarity_rows,
         key=lambda row: (-row['Similar_Hymn_Count'], row['Base_Hymn'].lower())
@@ -360,9 +379,10 @@ def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max
         writer.writerows(similarity_rows)
 
     print(f"Data written to {output_csv}")
+    if total_unique:
+        print("Done.", flush=True)
 
 def process_single_hymnal(hymnal_code):
-    """Process a single hymnal and return its hymn data."""
     target_url = urljoin(base_url, f"{sub_url_hymnal}/{hymnal_code}")
     response = get_response(target_url)
 
