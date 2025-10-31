@@ -13,7 +13,7 @@ from difflib import SequenceMatcher
 
 # caden finley
 
-csv_fields = ['Hymnal_Code', 'Hymnal_Name', 'Denomination', 'Hymn_Total', 'Hymn_Number', 'Hymn', 'Hymn_No_Blanks', 'Hymn_ID']
+csv_fields = ['Hymnal_Code', 'Hymnal_Name', 'Denomination', 'Hymn_Total', 'Hymn_Number', 'Hymn', 'Hymn_ID']
 base_url = 'https://hymnary.org/'
 sub_url_hymnal = 'hymnal'
 timestamp = datetime.now().strftime("%m-%d-%Y")
@@ -25,8 +25,8 @@ request_delay = 0.5
 max_workers = 5
 hymn_id_lock = threading.Lock()
 request_counter_lock = threading.Lock()
-similarity_threshold = 0.85
-max_similarity_results = 15
+similarity_threshold = 0.75
+max_similarity_results = 100
 
 def get_response(url):
     global request_counter
@@ -97,11 +97,6 @@ def extract_hymnal_metadata(soup):
     
     return hymnal_name, denomination
 
-def format_hymn_no_blanks(hymn_text): 
-    formatted = re.sub(r'\s+', '_', hymn_text.strip())
-    formatted = re.sub(r'[^a-zA-Z0-9_]', '', formatted)
-    return formatted
-
 def extract_hymns_from_page(soup, page_label, hymnal_code, hymnal_name, denomination):
     global global_hymn_id
     
@@ -156,7 +151,6 @@ def extract_hymns_from_page(soup, page_label, hymnal_code, hymnal_name, denomina
                 'Hymn_Total': '',
                 'Hymn_Number': hymn_number,
                 'Hymn': hymn_text,
-                'Hymn_No_Blanks': format_hymn_no_blanks(hymn_text),
                 'Hymn_ID': hymn_id
             })
     
@@ -230,13 +224,13 @@ def generate_book_data_csv(all_hymns_data, output_csv):
     sorted_codes = sorted(hymnal_codes)
      
     with open(output_csv, 'w', newline='', encoding='utf-8') as f:
-        fieldnames = ['Hymn', 'Hymn_No_Blanks'] + sorted_codes + ['Total']
+        fieldnames = ['Hymn'] + sorted_codes + ['Total']
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         
         
         for hymn in sorted(hymn_data.keys()):
-            row_data = {'Hymn': hymn, 'Hymn_No_Blanks': format_hymn_no_blanks(hymn)}
+            row_data = {'Hymn': hymn}
             row_total = 0
             
             for code in sorted_codes:
@@ -248,7 +242,7 @@ def generate_book_data_csv(all_hymns_data, output_csv):
             writer.writerow(row_data)
         
         
-        total_row = {'Hymn': 'TOTAL', 'Hymn_No_Blanks': 'TOTAL'}
+        total_row = {'Hymn': 'TOTAL'}
         grand_total = 0
         
         for code in sorted_codes:
@@ -275,7 +269,6 @@ def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max
         normalized_text = re.sub(r'\s+', ' ', hymn_text).lower()
         normalized_entries.append({
             'Hymn': hymn_text,
-            'Hymn_No_Blanks': row.get('Hymn_No_Blanks', ''),
             'Hymnal_Code': row.get('Hymnal_Code', ''),
             'Hymnal_Name': row.get('Hymnal_Name', ''),
             'Denomination': row.get('Denomination', ''),
@@ -341,7 +334,6 @@ def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max
         if similar_entries:
             similarity_rows.append({
                 'Base_Hymn': entry['Hymn'],
-                'Base_Hymn_No_Blanks': entry['Hymn_No_Blanks'],
                 'Base_Hymnal_Code': entry['Hymnal_Code'],
                 'Base_Hymnal_Name': entry['Hymnal_Name'],
                 'Base_Denomination': entry['Denomination'],
@@ -349,10 +341,14 @@ def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max
                 'Similar_Hymn_Count': len(similar_entries)
             })
 
+    similarity_rows = sorted(
+        similarity_rows,
+        key=lambda row: (-row['Similar_Hymn_Count'], row['Base_Hymn'].lower())
+    )
+
     with open(output_csv, 'w', newline='', encoding='utf-8') as f:
         fieldnames = [
             'Base_Hymn',
-            'Base_Hymn_No_Blanks',
             'Base_Hymnal_Code',
             'Base_Hymnal_Name',
             'Base_Denomination',
