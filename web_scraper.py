@@ -9,6 +9,7 @@ from collections import defaultdict
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
+from difflib import SequenceMatcher
 
 # caden finley
 
@@ -24,6 +25,8 @@ request_delay = 0.5
 max_workers = 5
 hymn_id_lock = threading.Lock()
 request_counter_lock = threading.Lock()
+similarity_threshold = 0.85
+max_similarity_results = 15
 
 def get_response(url):
     global request_counter
@@ -257,6 +260,111 @@ def generate_book_data_csv(all_hymns_data, output_csv):
         writer.writerow(total_row)
         print(f"Data written to {output_csv}")
 
+
+def generate_hymn_similarity_csv(all_hymns_data, output_csv, threshold=0.85, max_results_per_hymn=15):
+    """Generate a CSV showing fuzzy matches between hymns across hymnals."""
+    if not all_hymns_data:
+        return
+
+    normalized_entries = []
+    for row in all_hymns_data:
+        hymn_text = row.get('Hymn', '').strip()
+        if not hymn_text:
+            continue
+
+        normalized_text = re.sub(r'\s+', ' ', hymn_text).lower()
+        normalized_entries.append({
+            'Hymn': hymn_text,
+            'Hymn_No_Blanks': row.get('Hymn_No_Blanks', ''),
+            'Hymnal_Code': row.get('Hymnal_Code', ''),
+            'Hymnal_Name': row.get('Hymnal_Name', ''),
+            'Denomination': row.get('Denomination', ''),
+            'Hymn_ID': row.get('Hymn_ID'),
+            'Normalized_Hymn': normalized_text
+        })
+
+    if not normalized_entries:
+        return
+
+    unique_map = {}
+    for entry in normalized_entries:
+        key = entry['Normalized_Hymn']
+        bucket = unique_map.setdefault(key, {
+            'text': entry['Hymn'],
+            'compare_text': entry['Hymn'].lower(),
+            'entries': []
+        })
+        bucket['entries'].append(entry)
+
+    unique_keys = list(unique_map.keys())
+    similarity_results = {key: [(key, 1.0)] for key in unique_keys}
+
+    for i in range(len(unique_keys)):
+        key_i = unique_keys[i]
+        text_i = unique_map[key_i]['compare_text']
+        for j in range(i + 1, len(unique_keys)):
+            key_j = unique_keys[j]
+            text_j = unique_map[key_j]['compare_text']
+            score = SequenceMatcher(None, text_i, text_j).ratio()
+            if score >= threshold:
+                similarity_results[key_i].append((key_j, score))
+                similarity_results[key_j].append((key_i, score))
+
+    similarity_rows = []
+    for entry in normalized_entries:
+        key = entry['Normalized_Hymn']
+        matches = similarity_results.get(key, [])
+        matches = sorted(matches, key=lambda item: item[1], reverse=True)
+
+        similar_entries = []
+        seen_pairs = set()
+        base_identifier = (entry['Hymn'], entry['Hymnal_Code'])
+        seen_pairs.add(base_identifier)
+
+        for similar_key, score in matches:
+            for similar_entry in unique_map[similar_key]['entries']:
+                identifier = (similar_entry['Hymn'], similar_entry['Hymnal_Code'])
+                if identifier in seen_pairs:
+                    continue
+
+                similar_entries.append(
+                    f"{similar_entry['Hymn']} [{similar_entry['Hymnal_Code']}] ({score:.2f})"
+                )
+                seen_pairs.add(identifier)
+
+                if max_results_per_hymn and len(similar_entries) >= max_results_per_hymn:
+                    break
+
+            if max_results_per_hymn and len(similar_entries) >= max_results_per_hymn:
+                break
+
+        if similar_entries:
+            similarity_rows.append({
+                'Base_Hymn': entry['Hymn'],
+                'Base_Hymn_No_Blanks': entry['Hymn_No_Blanks'],
+                'Base_Hymnal_Code': entry['Hymnal_Code'],
+                'Base_Hymnal_Name': entry['Hymnal_Name'],
+                'Base_Denomination': entry['Denomination'],
+                'Similar_Hymns': '; '.join(similar_entries),
+                'Similar_Hymn_Count': len(similar_entries)
+            })
+
+    with open(output_csv, 'w', newline='', encoding='utf-8') as f:
+        fieldnames = [
+            'Base_Hymn',
+            'Base_Hymn_No_Blanks',
+            'Base_Hymnal_Code',
+            'Base_Hymnal_Name',
+            'Base_Denomination',
+            'Similar_Hymns',
+            'Similar_Hymn_Count'
+        ]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(similarity_rows)
+
+    print(f"Data written to {output_csv}")
+
 def process_single_hymnal(hymnal_code):
     """Process a single hymnal and return its hymn data."""
     target_url = urljoin(base_url, f"{sub_url_hymnal}/{hymnal_code}")
@@ -319,8 +427,15 @@ def main():
         
         hymnals_csv = f'hymnals_{timestamp}.csv'
         book_data_csv = f'book_data_{timestamp}.csv'
+        similarity_csv = f'hymn_similarity_{timestamp}.csv'
         generate_hymnals_csv(all_hymns, hymnals_csv)
         generate_book_data_csv(all_hymns, book_data_csv)
+        generate_hymn_similarity_csv(
+            all_hymns,
+            similarity_csv,
+            threshold=similarity_threshold,
+            max_results_per_hymn=max_similarity_results
+        )
 
 if __name__ == "__main__":
     main()
